@@ -1,4 +1,4 @@
-PROGRAM_VERSION = '1.1.0'
+PROGRAM_VERSION = '2.0.0'
 
 import time
 import os
@@ -6,18 +6,25 @@ import json
 import datetime
 import shutil
 import stat
+from typing import Sequence
+
+# Set Path for cublas DLLs, neede by ctranslate2 and torch
+script_path = os.path.realpath(__file__)
+cublas_path = os.path.join(script_path, "python", "Lib", "cublas")
+os.environ["PATH"] = os.environ["PATH"] + ";" + cublas_path
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "true"
 
 # Parse command line arguments
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('--inputpath', '-i', type=str, action='store', required=True, help='Directory where the media files to process are obtained from. Must be writable.')
-parser.add_argument('--processingpath', '-p', type=str, action='store', required=True, help='Directory where the currently processed media file gets stored. Must be writable.')
-parser.add_argument('--outputpath', '-o', type=str, action='store', required=True, help='Directory where the output JSON files will be stored. Must be writable.')
-parser.add_argument('--whisperpath', '-w', type=str, action='store', required=True, help='Directory where the Faster-Whisper models are stored.')
-parser.add_argument('--argospath', '-a', type=str, action='store', required=True, help='Directory where the Argos Translate models are stored.')
-parser.add_argument('--whispermodel', '-m', type=str, default='small', action='store', help='Whisper model size to use. Can be "tiny", "base", "small" (default), "medium" or "large-v2".')
-parser.add_argument('--usegpu', '-g', action='store_true', help='Use GPU for neural network calculations. Needs to have cuBLAS and cuDNN installed from https://github.com/Purfview/whisper-standalone-win/releases/tag/libs')
-parser.add_argument('--version', '-v', action='version', version=PROGRAM_VERSION)
+parser.add_argument('--inputpath', type=str, action='store', required=True, help='Directory where the media files to process are obtained from. Must be writable.')
+parser.add_argument('--processingpath', type=str, action='store', required=True, help='Directory where the currently processed media file gets stored. Must be writable.')
+parser.add_argument('--outputpath', type=str, action='store', required=True, help='Directory where the output JSON files will be stored. Must be writable.')
+parser.add_argument('--fasterwhisperpath', type=str, action='store', required=True, help='Directory where the Faster-Whisper models are stored.')
+parser.add_argument('--huggingfacepath', type=str, action='store', required=True, help='Directory where the Hugging Face models are stored.')
+parser.add_argument('--whispermodel', type=str, default='small', action='store', help='Whisper model size to use. Can be "tiny", "base", "small" (default), "medium" or "large-v2".')
+parser.add_argument('--usegpu', action='store_true', help='Use GPU for neural network calculations. Needs to have cuBLAS and cuDNN installed from https://github.com/Purfview/whisper-standalone-win/releases/tag/libs')
+parser.add_argument('--version', action='version', version=PROGRAM_VERSION)
 args = parser.parse_args()
 
 # Check write access to directories
@@ -34,7 +41,7 @@ if not os.access(OUTPUTPATH, os.R_OK | os.W_OK):
     sys.exit(f'ERROR: Cannot read and write output directory {OUTPUTPATH}')
 
 # Check existence of Whisper files
-WHISPERPATH = args.whisperpath
+WHISPERPATH = args.fasterwhisperpath
 WHISPERTINYMODELPATH = os.path.join(WHISPERPATH, 'models--guillaumekln--faster-whisper-tiny')
 WHISPERBASEMODELPATH = os.path.join(WHISPERPATH, 'models--guillaumekln--faster-whisper-base')
 WHISPERSMALLMODELPATH = os.path.join(WHISPERPATH, 'models--guillaumekln--faster-whisper-small')
@@ -53,13 +60,13 @@ if not os.access(WHISPERMEDIUMMODELPATH, os.R_OK):
 if not os.access(WHISPERLARGEV2MODELPATH, os.R_OK):
     sys.exit(f'ERROR: Cannot read Whisper large V2 model directory {WHISPERLARGEV2MODELPATH}')
 
-# Check existence of Argos Translate files
-ARGOSPATH = args.argospath
-ARGOSENDEPACKAGEPATH = os.path.join(ARGOSPATH, 'packages/en_de')
-if not os.access(ARGOSPATH, os.R_OK):
-    sys.exit(f'ERROR: Cannot read Argos Translate directory {ARGOSPATH}')
-if not os.access(ARGOSENDEPACKAGEPATH, os.R_OK):
-    sys.exit(f'ERROR: Cannot read Argos Translate EN->DE model directory {ARGOSENDEPACKAGEPATH}')
+# Check existence of Hugging Face model files
+HUGGINGFACEPATH = args.huggingfacepath
+HUGGINGFACEENDEPACKAGEPATH = os.path.join(HUGGINGFACEPATH, "hub", "models--Helsinki-NLP--opus-mt-en-de")
+if not os.access(HUGGINGFACEPATH, os.R_OK):
+    sys.exit(f'ERROR: Cannot read Hugging Face directory {HUGGINGFACEPATH}')
+if not os.access(HUGGINGFACEENDEPACKAGEPATH, os.R_OK):
+    sys.exit(f'ERROR: Cannot read Hugging Face EN->DE model directory {HUGGINGFACEENDEPACKAGEPATH}')
 
 USEGPU = args.usegpu
 
@@ -68,18 +75,32 @@ print('Loading Faster Whisper')
 from faster_whisper import WhisperModel    
 compute_type = 'float16' if USEGPU else 'int8'
 device = 'cuda' if USEGPU else 'cpu'
-whisper_model = WhisperModel( model_size_or_path = args.whispermodel, device = device, local_files_only = False, compute_type = compute_type, download_root = args.whisperpath )
+whisper_model = WhisperModel( model_size_or_path = args.whispermodel, device = device, local_files_only = False, compute_type = compute_type, download_root = WHISPERPATH )
 
-# Load Argos translate
-print('Loading Argos Translate')
-os.environ['ARGOS_PACKAGES_DIR'] = os.path.join(args.argospath, 'packages')
-os.environ['ARGOS_DEVICE_TYPE'] = device
-global argos_translation
-import argostranslate.translate
-argos_translation = argostranslate.translate.get_translation_from_codes('en', 'de')
+class Translator:
+    def __init__(self, source_lang: str, dest_lang: str, use_gpu: bool=False) -> None:
+        self.use_gpu = use_gpu
+        self.model_name = f'Helsinki-NLP/opus-mt-{source_lang}-{dest_lang}'
+        self.model = MarianMTModel.from_pretrained(self.model_name)
+        if use_gpu:
+            self.model = self.model.cuda()
+        self.tokenizer = MarianTokenizer.from_pretrained(self.model_name)
+        
+    def translate(self, texts: Sequence[str]) -> Sequence[str]:
+        tokens = self.tokenizer(list(texts), return_tensors="pt", padding=True)
+        if self.use_gpu:
+            tokens = {k:v.cuda() for k, v in tokens.items()}
+        translate_tokens = self.model.generate(**tokens)
+        return [self.tokenizer.decode(t, skip_special_tokens=True) for t in translate_tokens]
+
+# Load Marian MT
+print('Loading Marian MT')
+os.environ['HF_HOME'] = "./data/transformers_cache"
+from transformers import MarianMTModel, MarianTokenizer
+translator = Translator("en", "de", USEGPU)
 
 def translate_into_german(segments_en):
-    translation_segments_de = list(map(lambda segment: { 'start': segment['start'], 'end': segment['end'], 'text': argos_translation.translate(segment['text']) }, segments_en))
+    translation_segments_de = list(map(lambda segment: { 'start': segment['start'], 'end': segment['end'], 'text': translator.translate([segment['text']])[0] }, segments_en))
     return translation_segments_de
 
 def process_file(file_path):

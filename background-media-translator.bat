@@ -1,9 +1,9 @@
 .\python\python.exe^
  .\background-media-translator.py^
- -i .\data\input^
- -p .\data\processing^
- -o .\data\output^
- -w .\faster-whisper^
- -a .\argos-translate^
- -m large-v2
- -g
+ --inputpath .\data\input^
+ --processingpath .\data\processing^
+ --outputpath .\data\output^
+ --fasterwhisperpath .\faster-whisper^
+ --huggingfacepath .\hugging-face^
+ --whispermodel large-v2
+ --usegpu

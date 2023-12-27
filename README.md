@@ -19,22 +19,22 @@ Be aware that using this worker with GPU you need an NVidia graphics card with a
 ## Usage
 
 ```
-python background-media-translator.py [-h] --inputpath INPUTPATH --processingpath PROCESSINGPATH --outputpath OUTPUTPATH --whisperpath WHISPERPATH --argospath ARGOSPATH [--whispermodel WHISPERMODEL] [--usegpu] [--version]
+python background-media-translator.py [-h] --inputpath INPUTPATH --processingpath PROCESSINGPATH --outputpath OUTPUTPATH --fasterwhisperpath WHISPERPATH --argospath ARGOSPATH [--whispermodel WHISPERMODEL] [--usegpu] [--version]
 ```
 
 ### Options
 - `-h`, `--help`: show this help message and exit
-- `--inputpath INPUTPATH`, `-i INPUTPATH`: Directory where the images to process are obtained from. Must be writable.
-- `--processingpath PROCESSINGPATH`, `-p PROCESSINGPATH`: Directory where the currently processed image gets stored. Must be writable.
-- `--outputpath OUTPUTPATH`, `-o OUTPUTPATH`: Directory where the output JSON files will be stored. Must be writable.
-- `--whisperpath WHISPERPATH`, `-w WHISPERPATH`: Directory where the Faster-Whisper models are stored.
-- `--argospath ARGOSPATH`, `-a ARGOSPATH`: Directory where the Argos Translate models are stored.
-- `--whispermodel WHISPERMODEL`, `-m WHISPERMODEL`: Whisper model size to use. Can be "tiny", "base", "small" (default), "medium" or "large-v2".
-- `--usegpu`, `g`: Use GPU for neural network calculations. Needs to have cuBLAS and cuDNN installed from https://github.com/Purfview/whisper-standalone-win/releases/tag/libs
-- `--version`, `-v`: show program's version number and exit
+- `--inputpath INPUTPATH`: Directory where the images to process are obtained from. Must be writable.
+- `--processingpath PROCESSINGPATH`: Directory where the currently processed image gets stored. Must be writable.
+- `--outputpath OUTPUTPATH`: Directory where the output JSON files will be stored. Must be writable.
+- `--fasterwhisperpath WHISPERPATH`: Directory where the Faster-Whisper models are stored.
+- `--huggingfacepath HUGGINGFACEPATH`: Directory where the Hugging Face models are stored.
+- `--whispermodel WHISPERMODEL`: Whisper model size to use. Can be "tiny", "base", "small" (default), "medium" or "large-v2".
+- `--usegpu`: Use GPU for neural network calculations. Needs to have cuBLAS and cuDNN installed from https://github.com/Purfview/whisper-standalone-win/releases/tag/libs
+- `--version`: show program's version number and exit
 
 ## Example
 
 ```
-python background-media-translator.py -i ./data/input -p ./data/processing -o ./data/output -w ./faster-whisper -a ./argos-translate -m large-v2
+python background-media-translator.py --inputpath ./data/input --processingpath ./data/processing --outputpath ./data/output --fasterwhisperpath ./faster-whisper --huggingfacepath ./hugging-face --whispermodel large-v2
 ```
